@@ -1,4 +1,6 @@
 import os
+
+from yfinance import download
 import torch
 from torch import Tensor
 from pathlib import Path
@@ -7,7 +9,7 @@ from torchvision.datasets.folder import default_loader
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-from torchvision.datasets import CelebA
+from torchvision.datasets import CelebA, MNIST
 import zipfile
 
 
@@ -15,7 +17,6 @@ import zipfile
 class MyDataset(Dataset):
     def __init__(self):
         pass
-    
     
     def __len__(self):
         pass
@@ -81,6 +82,7 @@ class VAEDataset(LightningDataModule):
     def __init__(
         self,
         data_path: str,
+        dataset: str = 'MNIST',
         train_batch_size: int = 8,
         val_batch_size: int = 8,
         patch_size: Union[int, Sequence[int]] = (256, 256),
@@ -96,36 +98,33 @@ class VAEDataset(LightningDataModule):
         self.patch_size = patch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
-
-    def setup(self, stage: Optional[str] = None) -> None:
-#       =========================  OxfordPets Dataset  =========================
-            
-#         train_transforms = transforms.Compose([transforms.RandomHorizontalFlip(),
-#                                               transforms.CenterCrop(self.patch_size),
-# #                                               transforms.Resize(self.patch_size),
-#                                               transforms.ToTensor(),
-#                                                 transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])
-        
-#         val_transforms = transforms.Compose([transforms.RandomHorizontalFlip(),
-#                                             transforms.CenterCrop(self.patch_size),
-# #                                             transforms.Resize(self.patch_size),
-#                                             transforms.ToTensor(),
-#                                               transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])
-
-#         self.train_dataset = OxfordPets(
-#             self.data_dir,
-#             split='train',
-#             transform=train_transforms,
-#         )
-        
-#         self.val_dataset = OxfordPets(
-#             self.data_dir,
-#             split='val',
-#             transform=val_transforms,
-#         )
-        
-#       =========================  CelebA Dataset  =========================
     
+    def _oxford_setup(self) -> None:
+         train_transforms = transforms.Compose([transforms.RandomHorizontalFlip(),
+                                              transforms.CenterCrop(self.patch_size),
+                                               transforms.Resize(self.patch_size),
+                                               transforms.ToTensor(),
+                                                 transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])
+        
+         val_transforms = transforms.Compose([transforms.RandomHorizontalFlip(),
+                                             transforms.CenterCrop(self.patch_size),
+                                             transforms.Resize(self.patch_size),
+                                             transforms.ToTensor(),
+                                               transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])
+
+         self.train_dataset = OxfordPets(
+             self.data_dir,
+             split='train',
+             transform=train_transforms,
+         )
+       
+         self.val_dataset = OxfordPets(
+             self.data_dir,
+             split='val',
+             transform=val_transforms,
+         )
+         
+    def _celeba_setup(self):
         train_transforms = transforms.Compose([transforms.RandomHorizontalFlip(),
                                               transforms.CenterCrop(148),
                                               transforms.Resize(self.patch_size),
@@ -149,8 +148,34 @@ class VAEDataset(LightningDataModule):
             split='test',
             transform=val_transforms,
             download=False,
+        )         
+    def _mnist_setup(self):
+        transforms = transforms.Compose([transforms.RandomHorizontalFlip(),
+                                                transforms.RandomVerticalFlip(),
+                                              transforms.Resize(self.patch_size),
+                                              transforms.ToTensor(),])
+        
+        self.train_dataset = MNIST(
+            self.data_dir,
+            train=True,
+            transform=transforms,
+            download=True
         )
-#       ===============================================================
+
+        self.test_dataset = MNIST(
+            self.data_dir,
+            train=False,
+            transform=transforms,
+            download=True
+        )
+
+    def setup(self, stage: Optional[str] = None) -> None:
+        if self.dateset == 'Oxford':
+            return self._oxford_setup()
+        if self.dataset == 'CelebA':
+            return self._celeba_setup()
+        if self.dataset == 'MNIST':
+            return self._mnist_setup()
         
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
@@ -178,4 +203,3 @@ class VAEDataset(LightningDataModule):
             shuffle=True,
             pin_memory=self.pin_memory,
         )
-     
