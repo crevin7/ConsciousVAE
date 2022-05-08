@@ -177,6 +177,8 @@ class VAEDataset(LightningDataModule):
         if self.dataset == 'MNIST':
             return self._mnist_setup()
         
+        raise ValueError(f"Dataset {self.dataset} not implemented")
+        
     def train_dataloader(self) -> DataLoader:
         return DataLoader(
             self.train_dataset,
