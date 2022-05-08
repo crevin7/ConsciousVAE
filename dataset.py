@@ -150,7 +150,7 @@ class VAEDataset(LightningDataModule):
             download=False,
         )         
     def _mnist_setup(self):
-        transforms = transforms.Compose([transforms.RandomHorizontalFlip(),
+        transform = transforms.Compose([transforms.RandomHorizontalFlip(),
                                                 transforms.RandomVerticalFlip(),
                                               transforms.Resize(self.patch_size),
                                               transforms.ToTensor(),])
@@ -158,14 +158,14 @@ class VAEDataset(LightningDataModule):
         self.train_dataset = MNIST(
             self.data_dir,
             train=True,
-            transform=transforms,
+            transform=transform,
             download=True
         )
 
         self.test_dataset = MNIST(
             self.data_dir,
             train=False,
-            transform=transforms,
+            transform=transform,
             download=True
         )
 
