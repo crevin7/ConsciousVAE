@@ -1,6 +1,5 @@
 import os
 
-from yfinance import download
 import torch
 from torch import Tensor
 from pathlib import Path
@@ -98,6 +97,7 @@ class VAEDataset(LightningDataModule):
         self.patch_size = patch_size
         self.num_workers = num_workers
         self.pin_memory = pin_memory
+        self.dataset = dataset
     
     def _oxford_setup(self) -> None:
          train_transforms = transforms.Compose([transforms.RandomHorizontalFlip(),
@@ -170,7 +170,7 @@ class VAEDataset(LightningDataModule):
         )
 
     def setup(self, stage: Optional[str] = None) -> None:
-        if self.dateset == 'Oxford':
+        if self.dataset == 'Oxford':
             return self._oxford_setup()
         if self.dataset == 'CelebA':
             return self._celeba_setup()
