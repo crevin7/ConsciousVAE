@@ -1,9 +1,37 @@
+from importlib.util import module_for_loader
+from tokenize import String
 import torch
 from models import BaseVAE
 from torch import nn
 from torch.nn import functional as F
 from .types_ import *
 
+#these functions here should be moved in a different file
+def conv_module(in_channels, out_channels):
+    module = nn.Sequential(
+        nn.Conv2d(in_channels, out_channels=out_channels,
+                kernel_size= 4, stride= 2, padding  = 1),
+        nn.BatchNorm2d(out_channels),
+        nn.LeakyReLU())
+    return module
+
+def linear_module(in_channels, out_channels):
+    module = nn.Sequential(
+        nn.Linear(in_channels, out_channels=out_channels),
+        nn.LeakyReLU())
+    return module
+
+def conv_transpose_module(in_channels, out_channels):
+    module = nn.Sequential(
+        nn.ConvTranspose2d(in_channels,
+                        out_channels,
+                        kernel_size=4,
+                        stride = 2,
+                        padding=1,
+                        output_padding=0),
+        nn.BatchNorm2d(in_channels),
+        nn.LeakyReLU())
+    return module
 
 class VanillaVAE(BaseVAE):
 
@@ -12,70 +40,89 @@ class VanillaVAE(BaseVAE):
                  in_channels: int,
                  latent_dim: int,
                  hidden_dims: List = None,
-                 kernel_size: int = 3,
-                 stride: int = 2,
-                 padding: int =1,
+                 kind: String = 'conv',
                  **kwargs) -> None:
         super(VanillaVAE, self).__init__()
 
         self.latent_dim = latent_dim
-
-        modules = []
+        self.in_channels = in_channels
+        
         if hidden_dims is None:
             hidden_dims = [32, 64, 128, 256, 512]
+        
+        self.encoder_dims = kwargs.get("encoder_dims", hidden_dims)
+        self.decoder_dims = kwargs.get("decoder_dims", hidden_dims[::-1])
+        self.latent_dim = latent_dim
+        self.in_channels = in_channels
+        self.kind = kind
 
-        # Build Encoder
-        for h_dim in hidden_dims:
+        self._build_encoder()
+        self._build_decoder()
+
+        
+    def _build_encoder(self)->None:
+        modules = []
+        in_channels = self.in_channels
+
+        if self.kind == 'conv':
+            module = conv_module
+            # this quantity here should be defined by the user, as it depends by the kernel 
+            # and the depth of the network
+            n_units = 4 
+        elif self.kind == 'linear':
+            module = linear_module
+            n_units = 1
+        else:
+            ValueError(f"kind {self.kind} not implemented")
+
+        for h_dim in self.encoder_dims:
             modules.append(
-                nn.Sequential(
-                    nn.Conv2d(in_channels, out_channels=h_dim,
-                              kernel_size= kernel_size, stride=stride, padding = padding),
-                    nn.BatchNorm2d(h_dim),
-                    nn.LeakyReLU())
+                module(in_channels, h_dim)
             )
             in_channels = h_dim
-
+        
         self.encoder = nn.Sequential(*modules)
-        self.fc_mu = nn.Linear(hidden_dims[-1]*4, latent_dim)
-        self.fc_var = nn.Linear(hidden_dims[-1]*4, latent_dim)
+        self.fc_mu = nn.Linear(self.encoder_dims[-1]*n_units, self.latent_dim)
+        self.fc_var = nn.Linear(self.encoder_dims[-1]*n_units, self.latent_dim)
 
 
-        # Build Decoder
+    def _build_decoder(self)->None:
+
         modules = []
 
-        self.decoder_input = nn.Linear(latent_dim, hidden_dims[-1] * 4)
+        if self.kind == 'conv':
+            module = conv_transpose_module
+            # this quantity here should be defined by the user, as it depends by the kernel 
+            # and the depth of the network
+            n_units = 4*2 
+        elif self.kind == 'linear':
+            module = linear_module
+            n_units = 1
+        else:
+            ValueError(f"kind {self.kind} not implemented")
 
-        hidden_dims.reverse()
+        self.decoder_input = nn.Linear(self.latent_dim, self.encoder_dims[-1] * (n_units)*(n_units))
 
-        for i in range(len(hidden_dims) - 1):
+
+        for i in range(len(self.decoder_dims) - 1):
             modules.append(
-                nn.Sequential(
-                    nn.ConvTranspose2d(hidden_dims[i],
-                                       hidden_dims[i + 1],
-                                       kernel_size=kernel_size,
-                                       stride=stride,
-                                       padding=padding,
-                                       output_padding=1),
-                    nn.BatchNorm2d(hidden_dims[i + 1]),
-                    nn.LeakyReLU())
+                module(self.decoder_dims[i],
+                        self.decoder_dims[i + 1])
             )
-
-
-
+            
         self.decoder = nn.Sequential(*modules)
 
-        self.final_layer = nn.Sequential(
-                            nn.ConvTranspose2d(hidden_dims[-1],
-                                               hidden_dims[-1],
-                                               kernel_size=kernel_size,
-                                               stride=stride,
-                                               padding=padding,
-                                               output_padding=1),
-                            nn.BatchNorm2d(hidden_dims[-1]),
-                            nn.LeakyReLU(),
-                            nn.Conv2d(hidden_dims[-1], out_channels= in_channels,
-                                      kernel_size=kernel_size, padding=padding),
-                            nn.Tanh())
+        if self.kind == 'conv':
+            self.final_layer = nn.Sequential(
+                                nn.Conv2d(self.decoder_dims[-1],
+                                out_channels= self.in_channels,
+                                kernel_size=4, stride=2, padding=1),
+                                nn.Tanh())
+        else:
+            self.final_layer = nn.Sequential(
+                                nn.Linear(self.decoder_dims[-1],
+                                out_channels= self.in_channels),
+                                nn.Tanh())
 
     def encode(self, input: Tensor) -> List[Tensor]:
         """
@@ -102,7 +149,8 @@ class VanillaVAE(BaseVAE):
         :return: (Tensor) [B x C x H x W]
         """
         result = self.decoder_input(z)
-        result = result.view(-1, 512, 2, 2)
+        
+        result = result.view(-1, self.hidden_dims[-1], 8, 8)
         result = self.decoder(result)
         result = self.final_layer(result)
         return result
