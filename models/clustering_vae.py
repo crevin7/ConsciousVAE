@@ -5,6 +5,7 @@ from models import BaseVAE
 from torch import nn
 from torch.nn import functional as F
 from .types_ import *
+from sklearn.cluster import KMeans
 
 #these functions here should be moved in a different file
 def conv_module(in_channels, out_channels):
@@ -168,11 +169,18 @@ class VanillaVAE(BaseVAE):
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return eps * std + mu
+    
+    def assign_cluster(self, z: Tensor, clusters: Tensor):
+        assert(z.size()[1]) == clusters.size()[1] == self.laltent_dim
+        dist = torch.norm(clusters - z, dim=1)
+        closest_cluster = dist.topk(1, largest=False)
+        return closest_cluster
 
-    def forward(self, input: Tensor, **kwargs) -> List[Tensor]:
+    def forward(self, input: Tensor, clusters: Tensor, **kwargs) -> List[Tensor]:
         mu, log_var = self.encode(input)
         z = self.reparameterize(mu, log_var)
-        return  [self.decode(z), input, mu, log_var]
+        clust_mu = self.assign_cluster(z, clusters=clusters)
+        return  [self.decode(z), input, self.decode(clust_mu) mu, log_var, clust_mu]
 
     def loss_function(self,
                       *args,
@@ -186,16 +194,19 @@ class VanillaVAE(BaseVAE):
         """
         recons = args[0]
         input = args[1]
-        mu = args[2]
-        log_var = args[3]
+        clust_recons = args[2]
+        mu = args[3]
+        log_var = args[4]
+        clust_mu = args[5]
 
         kld_weight = kwargs['M_N'] # Account for the minibatch samples from the dataset
+        mean_rec_weight = kwargs['mean_rec_weight'] # Account for the minibatch samples from the dataset
         recons_loss =F.mse_loss(recons, input)
 
 
-        kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
+        kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - (mu - clust_mu)** 2 - log_var.exp(), dim = 1), dim = 0)
 
-        loss = recons_loss + kld_weight * kld_loss
+        loss = recons_loss + mean_rec_weight*clust_recons + kld_weight * kld_loss
         return {'loss': loss, 'Reconstruction_Loss':recons_loss.detach(), 'KLD':-kld_loss.detach()}
 
     def sample(self,
