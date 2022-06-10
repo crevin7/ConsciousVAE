@@ -180,7 +180,7 @@ class VanillaVAE(BaseVAE):
         mu, log_var = self.encode(input)
         z = self.reparameterize(mu, log_var)
         clust_mu = self.assign_cluster(z, clusters=clusters)
-        return  [self.decode(z), input, self.decode(clust_mu) mu, log_var, clust_mu]
+        return  [self.decode(z), input, self.decode(clust_mu), mu, log_var, clust_mu]
 
     def loss_function(self,
                       *args,
