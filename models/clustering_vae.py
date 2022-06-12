@@ -30,7 +30,7 @@ def conv_transpose_module(in_channels, out_channels):
                         stride = 2,
                         padding=1,
                         output_padding=0),
-        nn.BatchNorm2d(in_channels),
+        nn.BatchNorm2d(out_channels),
         nn.LeakyReLU())
     return module
 
@@ -69,7 +69,7 @@ class VanillaVAE(BaseVAE):
             module = conv_module
             # this quantity here should be defined by the user, as it depends by the kernel 
             # and the depth of the network
-            n_units = 4 
+            n_units = 1
         elif self.kind == 'linear':
             module = linear_module
             n_units = 1
@@ -171,7 +171,7 @@ class VanillaVAE(BaseVAE):
         return eps * std + mu
     
     def assign_cluster(self, z: Tensor, clusters: Tensor):
-        assert(z.size()[1]) == clusters.size()[1] == self.laltent_dim
+        assert z.size()[1] == clusters.size()[1] == self.latent_dim
         dist = torch.norm(clusters - z, dim=1)
         closest_cluster = dist.topk(1, largest=False)
         return closest_cluster
