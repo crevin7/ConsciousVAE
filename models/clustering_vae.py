@@ -95,7 +95,7 @@ class VanillaVAE(BaseVAE):
             module = conv_transpose_module
             # this quantity here should be defined by the user, as it depends by the kernel 
             # and the depth of the network
-            self.n_units = 4*2 
+            self.n_units = 2*2 
         elif self.kind == 'linear':
             module = linear_module
             self.n_units = 1
@@ -170,11 +170,28 @@ class VanillaVAE(BaseVAE):
         eps = torch.randn_like(std)
         return eps * std + mu
     
+    def distance_matrix(self, x, y=None, p = 2): #pairwise distance of vectors
+    
+        y = x if type(y) == type(None) else y
+
+        n = x.size(0)
+        m = y.size(0)
+        d = x.size(1)
+
+        x = x.unsqueeze(1).expand(n, m, d)
+        y = y.unsqueeze(0).expand(n, m, d)
+        
+        dist = torch.pow(x - y, p).sum(2)
+        
+        return dist
+    
     def assign_cluster(self, z: Tensor, clusters: Tensor):
         assert z.size()[1] == clusters.size()[1] == self.latent_dim
-        dist = torch.norm(clusters - z, dim=1)
-        closest_cluster = dist.topk(1, largest=False)
-        return closest_cluster
+        #print(z.size())
+        dist = self.distance_matrix(clusters, z)
+        #print(dist.shape)
+        closest_cluster = torch.argmin(dist,  dim=1)
+        return clusters[closest_cluster]
 
     def forward(self, input: Tensor, clusters: Tensor, **kwargs) -> List[Tensor]:
         mu, log_var = self.encode(input)
@@ -202,11 +219,11 @@ class VanillaVAE(BaseVAE):
         kld_weight = kwargs['M_N'] # Account for the minibatch samples from the dataset
         mean_rec_weight = kwargs['mean_rec_weight'] # Account for the minibatch samples from the dataset
         recons_loss =F.mse_loss(recons, input)
-
+        clust_recons_loss = F.mse_loss(clust_recons, input)
 
         kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - (mu - clust_mu)** 2 - log_var.exp(), dim = 1), dim = 0)
 
-        loss = recons_loss + mean_rec_weight*clust_recons + kld_weight * kld_loss
+        loss = recons_loss + mean_rec_weight*clust_recons_loss + kld_weight * kld_loss
         return {'loss': loss, 'Reconstruction_Loss':recons_loss.detach(), 'KLD':-kld_loss.detach()}
 
     def sample(self,
